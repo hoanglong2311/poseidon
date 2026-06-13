@@ -1,3 +1,14 @@
+# Jira Triage Bot — Claw-a-thon 2026
+
+> **Project:** AI bot tự động tổng hợp, phân loại và phân phối Jira ticket cho team — tích hợp Confluence để suggest hướng giải quyết từ case cũ.
+>
+> **Event:** Claw-a-thon 2026 · VNG Group · GreenNode AgentBase
+> **Hạn nộp bài:** 17/06/2026 · 12:00
+>
+> **Product context:** [`docs/product/PRODUCT_CONTEXT.md`](docs/product/PRODUCT_CONTEXT.md)
+
+---
+
 # repository-harness
 
 Turn any software repo into an agent-ready workspace.
