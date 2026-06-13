@@ -13,7 +13,14 @@ Hiện tại, OP và FA phải thủ công phân phối và theo dõi Jira ticke
 
 ## Giải pháp
 
-AI Bot tự động tổng hợp, phân tích và phân phối Jira ticket — kết hợp với Confluence để suggest hướng giải quyết từ các case đã có.
+AI Bot tự động scan, tổng hợp và phân tích Jira ticket được assign cho team — kết hợp với Confluence để suggest hướng giải quyết từ các case đã có.
+
+**Workflow chính:**
+
+1. OP/FA assign ticket trên Jira cho các thành viên (Quang, a Khang, chị Trần) như bình thường — không thay đổi quy trình hiện tại
+2. Agent dùng **Account Jira Recon** tự động scan ticket từ 2 project `OS` (Operation Support) và `ISSUE` (ZaloPay Production Issue), lọc `type = Support / Production Support`, `assignee là các thành viên trong team`
+3. Agent phân tích, phân loại và tổng hợp báo cáo hiển thị trên Copilot Kit UI
+4. Các thành viên cũng có thể **chủ động gửi ticket vào UI** để hỏi agent về hướng xử lý
 
 ---
 
@@ -30,9 +37,12 @@ Bot hoạt động theo **2 tầng poll**:
 
 ### Tầng 2 — Background Sync (mỗi 30 phút)
 
-- Poll Jira liên tục trong giờ làm việc để agent luôn có data mới nhất
+- Dùng **Account Jira Recon** poll Jira, lọc ticket từ 2 project:
+  - **Operation Support** (`OS`) — `type = Support`
+  - **ZaloPay Production Issue** (`ISSUE`) — `type = Support` hoặc `Production Support`
+  - `assignee là các thành viên trong team`
 - Không push notification, chỉ update internal state
-- Khi user chat hỏi → bot trả lời từ data đã sync, không cần gọi Jira real-time → response nhanh
+- Khi team member chat hỏi trên UI → bot trả lời từ data đã sync, không cần gọi Jira real-time → response nhanh
 
 > **Open question:** Nếu có ticket critical/urgent mới tạo giữa ngày, có cần alert ngay không hay chờ 17:30?
 
@@ -53,8 +63,14 @@ Với mỗi batch ticket (report trigger), bot tạo:
 
 ## Kênh phân phối
 
-- **Zalo**: Bot được thêm vào group, mention để notify team
-- **Telegram**: Qua BotFather
+### Phase hiện tại (MVP)
+
+- **Copilot Kit UI** — giao diện chính. Quang, a Khang, chị Trần truy cập để xem báo cáo phân tích và chat hỏi agent về ticket được assign cho mình. OP/FA không cần thay đổi quy trình — vẫn assign ticket trên Jira như bình thường.
+
+### Phase sau (future)
+
+- **Zalo**: Thêm bot vào group, mention để notify team — chưa thực hiện trong hackathon này
+- **Telegram**: Qua BotFather — chưa thực hiện trong hackathon này
 
 ---
 
@@ -66,27 +82,30 @@ Với mỗi batch ticket (report trigger), bot tạo:
 | Confluence access | MCP server |
 | Workflow / orchestration | LangChain |
 | Chat UI | Copilot Kit UI |
-| Runtime | GreenNode AgentBase (OpenClaw) |
+| Runtime | GreenNode AgentBase — **Custom Agent** (có Dockerfile, backend riêng) |
 | Model | *(chưa xác định — cần chọn từ GreenNode MaaS)* |
 | Notification | Zalo Bot + Telegram BotFather |
+
+> **Custom Agent vs OpenClaw:** Dự án dùng Custom Agent runtime thay vì OpenClaw 1-click. Điều này cho phép kiểm soát hoàn toàn logic orchestration, polling scheduler, và tích hợp MCP — nhưng yêu cầu Dockerfile và pipeline deploy riêng.
 
 ---
 
 ## Luồng tổng thể
 
 ```
-[Jira] ──poll 30 phút──► [Agent internal state]
-                                  │
-              ┌───────────────────┤
-              │ 9:00 AM           │ 17:30
-              ▼                   ▼
-         [Report Engine] ◄── [Confluence MCP]
-              │               (tìm case tương tự)
-              ▼
-    [Zalo Group / Telegram]
-         (push báo cáo)
+[Jira: OS + ISSUE] ←── Account Jira Recon ──poll 30 phút──► [Agent internal state]
+  (type=Support/ProductionSupport, assignee=team)               │
+                                               ┌────────┤
+                                               │ 9:00   │ 17:30
+                                               ▼        ▼
+                                          [Report Engine] ◄── [Confluence MCP]
+                                               │            (tìm case tương tự)
+                                               ▼
+                                        [Copilot Kit UI]
+                                   (team xem báo cáo, chat hỏi)
 
-[User chat] ──► [Bot] ──► trả lời từ internal state
+OP/FA ──assign ticket──► Jira (quy trình không đổi)
+Team member ──chat──► [Bot] ──► trả lời từ internal state
 ```
 
 ---
@@ -95,22 +114,25 @@ Với mỗi batch ticket (report trigger), bot tạo:
 
 - **Hạn nộp bài:** 17/06/2026 · 12:00
 - **Thời gian phát triển còn lại:** ~4 ngày (tính từ 13/06)
-- **Platform target:** GreenNode AgentBase
+- **Platform target:** GreenNode AgentBase — Custom Agent runtime (không dùng OpenClaw)
 
 ### MVP cần có
 
 - [ ] Jira MCP kết nối, poll được ticket
 - [ ] Phân loại ticket (complexity, risk, PIC)
-- [ ] Report format chuẩn push qua Telegram
+- [ ] Report hiển thị trên Copilot Kit UI
 - [ ] Background sync 30 phút
 - [ ] Report trigger 9:00 và 17:30
 
 ### Nice-to-have (nếu còn thời gian)
 
 - [ ] Confluence MCP — suggest case tương tự
-- [ ] Zalo integration
-- [ ] Chat UI qua Copilot Kit
 - [ ] Alert ngay cho ticket urgent/critical
+
+### Future (sau hackathon)
+
+- [ ] Zalo group bot integration
+- [ ] Telegram BotFather integration
 
 ---
 
