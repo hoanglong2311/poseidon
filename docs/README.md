@@ -17,6 +17,12 @@ future user-provided spec.
 ## Folders
 
 - `product/`: current product truth, empty until a spec is derived.
+- `integrations/`: external-channel integration guides. Currently
+  `ZALO_BOT_INTEGRATION.md` (Zalo Bot setup, webhook payloads, and the bridge to
+  the GreenNode AgentBase agent).
+- `references/`: external/learning notes kept for cross-session context. Currently
+  `GREENNODE_AGENTBASE_VLLM_WIKI_NOTES.md` (deploy patterns for GreenNode AgentBase
+  Custom Agent runtime, distilled from the official vllm-wiki tutorial).
 - `stories/`: feature packets and backlog.
 - `decisions/`: durable decisions and tradeoffs.
 - `demo/`: concrete walkthroughs that show how the harness transforms input

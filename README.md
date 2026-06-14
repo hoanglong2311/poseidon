@@ -1,6 +1,6 @@
 # Jira Triage Bot — Claw-a-thon 2026
 
-> **Project:** AI bot tự động tổng hợp, phân loại và phân phối Jira ticket cho team — tích hợp Confluence để suggest hướng giải quyết từ case cũ.
+> **Project:** AI bot tự động scan, phân loại và tổng hợp Jira ticket cho team (OP/FA vẫn assign như cũ) — đọc runbook Confluence để gợi ý hướng xử lý. Chat qua Chainlit, push qua Zalo. 🟢 Đã deploy trên AgentBase.
 >
 > **Event:** Claw-a-thon 2026 · VNG Group · GreenNode AgentBase
 > **Hạn nộp bài:** 17/06/2026 · 12:00

@@ -1,76 +1,85 @@
-# Product Context — Jira Triage Bot
+# Product Context — Jira Triage Bot (Poseidon)
 
 > Claw-a-thon 2026 · VNG Group · GreenNode AgentBase
-> Last updated: 2026-06-13
+> Last updated: 2026-06-14 (cập nhật theo bản đã **DEPLOYED** — v9)
+> Code: [`../../agent/`](../../agent/) · Trạng thái: 🟢 **ACTIVE trên AgentBase**
 
 ---
 
 ## Vấn đề
 
-Hiện tại, OP và FA phải thủ công phân phối và theo dõi Jira ticket cho từng thành viên trong team (a Khang, C Trần, a Tùng, Quang). Quy trình này phân tán, tốn sức người, dễ bỏ sót context, và không có cơ chế suggest giải pháp dựa trên kinh nghiệm cũ.
+OP và FA phải thủ công phân phối và theo dõi Jira ticket cho từng thành viên trong team. Quy trình phân tán, tốn sức người, dễ bỏ sót context, và không có cơ chế gợi ý hướng giải quyết dựa trên runbook/kinh nghiệm cũ.
 
 ---
 
 ## Giải pháp
 
-AI Bot tự động scan, tổng hợp và phân tích Jira ticket được assign cho team — kết hợp với Confluence để suggest hướng giải quyết từ các case đã có.
+AI Bot tự động scan, phân loại và tổng hợp Jira ticket được assign cho team — kết hợp Confluence để **đọc runbook và reason ra các bước xử lý** cho từng ticket.
 
 **Workflow chính:**
 
-1. OP/FA assign ticket trên Jira cho các thành viên (Quang, a Khang, chị Trần) như bình thường — không thay đổi quy trình hiện tại
-2. Agent dùng **Account Jira Recon** tự động scan ticket từ 2 project `OS` (Operation Support) và `ISSUE` (ZaloPay Production Issue), lọc `type = Support / Production Support`, `assignee là các thành viên trong team`
-3. Agent phân tích, phân loại và tổng hợp báo cáo hiển thị trên Copilot Kit UI
-4. Các thành viên cũng có thể **chủ động gửi ticket vào UI** để hỏi agent về hướng xử lý
+1. OP/FA assign ticket trên Jira như bình thường — **không thay đổi quy trình hiện tại**.
+2. Agent tự động scan ticket từ 2 project **`OS`** (Operation Support) và **`ZPI`** (Zalopay production issue), lọc theo `assignee` là thành viên team (lọc theo `issuetype` là tuỳ chọn — mặc định lấy mọi type).
+3. Agent phân loại (complexity/risk) + tổng hợp báo cáo → hiển thị trên **Chainlit UI** (`/report`) và push qua **Notifier** (mặc định **Zalo**).
+4. Thành viên chat hỏi agent trên UI; agent đọc ticket + **xem danh sách runbook + đọc nội dung runbook Confluence** → reason → suggest các bước xử lý cụ thể.
+5. Sau khi gợi ý, agent **hỏi user có muốn tạo ticket CICD** (nhờ SO/SRE thực hiện) không — nếu user xác nhận, agent **tạo ticket trong project `CICD`** (kèm bước/câu lệnh + link runbook). Chat agent có **bộ nhớ hội thoại** trong phiên để hỗ trợ luồng hỏi→xác nhận.
+
+**Team hiện tại (test site `buuquang102.atlassian.net`):** Quang, Long, Tín.
 
 ---
 
 ## Polling Architecture
 
-Bot hoạt động theo **2 tầng poll**:
+Bot chạy **2 tầng poll** (APScheduler nội bộ container, single replica → không double-fire):
 
 ### Tầng 1 — Report Trigger (2 lần/ngày)
 
 | Thời điểm | Hành động |
 |-----------|-----------|
-| **9:00 AM** | Kéo toàn bộ ticket, tổng hợp báo cáo đầu ngày, push ra Zalo/Telegram |
-| **17:30** | Kéo toàn bộ ticket, tổng hợp báo cáo cuối ngày, push ra Zalo/Telegram |
+| **9:00** | Poll + classify → lưu SQLite + push báo cáo toàn đội ra **Zalo** |
+| **17:30** | Poll + classify → lưu SQLite + push báo cáo toàn đội ra **Zalo** |
 
-### Tầng 2 — Background Sync (mỗi 30 phút)
+> Report được **pre-compute** + lưu SQLite. Team xem lại bất cứ lúc nào bằng `/report` (instant); `/report now` để tính lại + push ngay.
 
-- Dùng **Account Jira Recon** poll Jira, lọc ticket từ 2 project:
-  - **Operation Support** (`OS`) — `type = Support`
-  - **ZaloPay Production Issue** (`ISSUE`) — `type = Support` hoặc `Production Support`
-  - `assignee là các thành viên trong team`
-- Không push notification, chỉ update internal state
-- Khi team member chat hỏi trên UI → bot trả lời từ data đã sync, không cần gọi Jira real-time → response nhanh
+### Tầng 2 — Background Sync (mỗi 30 phút, + 1 lần ngay khi khởi động)
 
-> **Open question:** Nếu có ticket critical/urgent mới tạo giữa ngày, có cần alert ngay không hay chờ 17:30?
+- Poll Jira (`project in (OS, ZPI)` + `assignee in (team)`) → upsert SQLite.
+- Phát hiện ticket **urgent/critical mới** → push **Zalo ngay tới PIC** (assignee), dedup bằng cờ `alerted`.
+- Chat hỏi → trả lời từ data đã sync (nhanh), tra Confluence khi cần.
+
+> **Open question (ĐÃ CHỐT):** ticket urgent giữa ngày → **push Zalo ngay tới PIC**, không chờ 17:30.
 
 ---
 
 ## Output của Bot
 
-Với mỗi batch ticket (report trigger), bot tạo:
-
-1. **Thống kê issues PRD** — tổng quan số lượng, trạng thái
-2. **Phân loại từng ticket** theo:
-   - Độ phức tạp (complexity)
-   - Risk level
-   - PIC (Person In Charge)
-3. **Suggest hướng giải quyết** — nếu tìm thấy case tương tự trong Confluence, link đến guide và đề xuất approach
+1. **Báo cáo dạng bảng** — Chainlit `/report` hiện **bảng markdown** (Key · Tiêu đề · Trạng thái · PIC · Phức tạp · Rủi ro); Zalo nhận bản text gọn theo nhóm PIC. Có thống kê tổng/trạng thái/đếm urgent.
+2. **Phân loại từng ticket** (Qwen 3.5 27B, tắt thinking → ~1-3s/ticket, classify song song):
+   - complexity — Low/Medium/High + 1 câu lý do
+   - risk — Low/Medium/High + 1 câu lý do
+   - PIC — **gom theo assignee sẵn có** (bot không reassign)
+3. **Gợi ý hướng xử lý từ runbook** — agent **xem danh sách toàn bộ runbook** (`list_available_runbooks`) → **đọc nội dung** runbook phù hợp → reason → tóm tắt các bước áp dụng cho ticket, kèm link.
+4. **Tạo ticket CICD theo runbook** *(có xác nhận — ADR 0011)* — sau khi gợi ý, agent hỏi user; nếu đồng ý → **tạo ticket trong project `CICD`** (type Task) với description **ADF** đẹp (heading/đậm/code block/link) gồm ticket nguồn + các bước + link runbook, và **tự link `Relates` về ticket gốc**.
 
 ---
 
-## Kênh phân phối
+## Kênh phân phối (MVP — đã triển khai)
 
-### Phase hiện tại (MVP)
+- **Chainlit UI** — giao diện chat chính (port 8080).
+  - **Đăng nhập Google OAuth** bắt buộc (`@cl.oauth_callback` + allowlist email/domain qua env). Test users của OAuth consent screen là lớp chặn truy cập.
+  - **Lịch sử hội thoại** — Chainlit data layer (SQLAlchemy + SQLite) → có sidebar thread + resume.
+  - Lệnh `/report` (báo cáo toàn đội đã tính sẵn) · `/report now` (tính lại + push) · chat tự do hỏi ticket/runbook.
+  - **Welcome screen** liệt kê đầy đủ command + khả năng; có **Starters** (thẻ bấm nhanh: xem báo cáo, ticket của tôi, cách xử lý ticket, danh sách runbook).
+- **Notifier (push)** — abstraction `send(chat_id, text)`, 2 backend hoán đổi bằng config:
+  - **Zalo (mặc định)** — host `bot-api.zapps.me`. Push **báo cáo toàn đội** (giống `/report`) tới từng member đã map + alert urgent tới PIC. Outbound `sendMessage`, không cần webhook. Chi tiết: [`../integrations/ZALO_BOT_INTEGRATION.md`](../integrations/ZALO_BOT_INTEGRATION.md)
+  - **Telegram (dự phòng)** — cùng interface, bật bằng `NOTIFY_BACKEND=telegram`.
+  - **Lấy `chat_id`:** member DM bot trong lúc chạy `getUpdates` (real-time long-poll) → map `{jira_account → chat_id}`. Map được **seed qua env `SEED_CHAT_IDS`** để sống sót qua redeploy (SQLite container ephemeral).
 
-- **Copilot Kit UI** — giao diện chính. Quang, a Khang, chị Trần truy cập để xem báo cáo phân tích và chat hỏi agent về ticket được assign cho mình. OP/FA không cần thay đổi quy trình — vẫn assign ticket trên Jira như bình thường.
+### Future (sau hackathon)
 
-### Phase sau (future)
-
-- **Zalo**: Thêm bot vào group, mention để notify team — chưa thực hiện trong hackathon này
-- **Telegram**: Qua BotFather — chưa thực hiện trong hackathon này
+- **Zalo GROUP** push (mention/reply) — chờ group bot ra khỏi Beta; cần webhook bridge.
+- **Push cá nhân hoá** — hiện push báo cáo toàn đội cho mọi member; `build_member_report` đã có sẵn nếu muốn chuyển lại per-member.
+- **Copilot Kit UI**, **chat 2 chiều trong Zalo**, **agentbase-identity** cho outbound auth, **Postgres** cho chat-history bền qua redeploy.
 
 ---
 
@@ -78,61 +87,69 @@ Với mỗi batch ticket (report trigger), bot tạo:
 
 | Thành phần | Công nghệ |
 |-----------|-----------|
-| Jira access | MCP server |
-| Confluence access | MCP server |
-| Workflow / orchestration | LangChain |
-| Chat UI | Copilot Kit UI |
-| Runtime | GreenNode AgentBase — **Custom Agent** (có Dockerfile, backend riêng) |
-| Model | *(chưa xác định — cần chọn từ GreenNode MaaS)* |
-| Notification | Zalo Bot + Telegram BotFather |
+| Jira/Confluence access | **REST API** (`atlassian-python-api`) wrap thành LangChain tools — *không dùng MCP* (ADR 0008). Đọc (sync/search/runbook body) + **ghi** (tạo ticket CICD qua API v3 với ADF) |
+| Workflow / orchestration | LangChain (`create_agent`, có bộ nhớ hội thoại trong phiên) + APScheduler (nội bộ) |
+| Chat UI | **Chainlit** (FastAPI) + **Google OAuth** + chat-history data layer — *thay Copilot Kit* (ADR 0009) |
+| State store | SQLite — `poseidon.db` (ticket/report/chat_id map) + `chainlit.db` (lịch sử chat) |
+| Runtime | GreenNode AgentBase — **Custom Agent**, single replica (min=max=1), PUBLIC, port 8080 + `/health` |
+| Model (chat) | `minimax/minimax-m2.5` — tool-calling ✅ (strip `<think>` khi hiển thị) |
+| Model (classify/report) | `qwen/qwen3-5-27b` |
+| LLM endpoint | `https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1` (OpenAI-compatible, API key BTC) |
+| Notification | **Notifier** → **Zalo** (`bot-api.zapps.me`, mặc định) + **Telegram** (dự phòng). Zalo GROUP = future. ADR 0010 |
 
-> **Custom Agent vs OpenClaw:** Dự án dùng Custom Agent runtime thay vì OpenClaw 1-click. Điều này cho phép kiểm soát hoàn toàn logic orchestration, polling scheduler, và tích hợp MCP — nhưng yêu cầu Dockerfile và pipeline deploy riêng.
+> **Custom Agent vs OpenClaw:** dùng Custom Agent (scaffold `/agentbase-wizard`) để kiểm soát orchestration + scheduler. Single replica tránh cron double-fire. `qwen3-reranker-8b` **không dùng** (Confluence search bằng CQL `text ~` + đọc body trực tiếp, không cần rerank endpoint).
 
 ---
 
 ## Luồng tổng thể
 
 ```
-[Jira: OS + ISSUE] ←── Account Jira Recon ──poll 30 phút──► [Agent internal state]
-  (type=Support/ProductionSupport, assignee=team)               │
-                                               ┌────────┤
-                                               │ 9:00   │ 17:30
-                                               ▼        ▼
-                                          [Report Engine] ◄── [Confluence MCP]
-                                               │            (tìm case tương tự)
-                                               ▼
-                                        [Copilot Kit UI]
-                                   (team xem báo cáo, chat hỏi)
+Custom Agent container (single replica, always-on, port 8080, /health)
+│
+[Jira: OS + ZPI] ←─ REST (assignee in team) ─poll 30' + lúc boot─► [SQLite]
+                                                          │   └─ urgent mới → Notifier→Zalo (tới PIC)
+                                    ┌──────────┤ 9:00 / 17:30
+                                    ▼          
+                          [classify: Qwen 3.5 27B] → lưu SQLite
+                                    ├──► Notifier→Zalo (push báo cáo toàn đội)
+                                    └──► Chainlit /report
 
+Chat: member (login Google, có bộ nhớ hội thoại) ─► [Chainlit + MiniMax M2.5]
+   tools: list_team_tickets · get_jira_ticket · list_available_runbooks ·
+          search_confluence_docs · read_confluence_page · create_cicd_ticket
+   → xem danh sách runbook → đọc → reason → suggest bước + link
+   → hỏi "tạo ticket CICD?" → (user đồng ý) tạo ticket CICD (ADF)
 OP/FA ──assign ticket──► Jira (quy trình không đổi)
-Team member ──chat──► [Bot] ──► trả lời từ internal state
 ```
 
 ---
 
-## Scope Claw-a-thon 2026
+## Trạng thái triển khai (DEPLOYED 2026-06-14)
 
-- **Hạn nộp bài:** 17/06/2026 · 12:00
-- **Thời gian phát triển còn lại:** ~4 ngày (tính từ 13/06)
-- **Platform target:** GreenNode AgentBase — Custom Agent runtime (không dùng OpenClaw)
+🟢 **ACTIVE** trên GreenNode AgentBase · **v17** · single replica 2x4 (2 CPU/4GB) · PUBLIC
+- Runtime: `poseidon-agent` · CR repo `111480-abp111802` (`vcr.vngcloud.vn`)
+- Endpoint: `https://endpoint-48095726-fd41-4c0a-b174-57656c1f8b2b.agentbase-runtime.aiplatform.vngcloud.vn`
+- Redeploy: rebuild image (`linux/amd64`, context `agent/`) → push CR → `runtime.sh update <id> --image ... --from-cr --env-file agent/.env`.
 
-### MVP cần có
+### Đã chạy live ✅
 
-- [ ] Jira MCP kết nối, poll được ticket
-- [ ] Phân loại ticket (complexity, risk, PIC)
-- [ ] Report hiển thị trên Copilot Kit UI
-- [ ] Background sync 30 phút
-- [ ] Report trigger 9:00 và 17:30
+- [x] Custom Agent (Chainlit, port 8080 + `/health`) — deploy ACTIVE
+- [x] Jira REST sync (OS + ZPI, assignee team) → SQLite · poll 30' + lúc boot
+- [x] Phân loại complexity/risk (Qwen 3.5 27B, tắt thinking + classify song song → nhanh)
+- [x] Report **dạng bảng** 9:00/17:30 + `/report` + `/report now`
+- [x] Chat agent (MiniMax M2.5 + tools) — **có bộ nhớ hội thoại trong phiên**
+- [x] **Confluence: xem danh sách runbook → đọc → reason ra các bước** (`list_available_runbooks` + `read_confluence_page`)
+- [x] **Tạo ticket CICD theo runbook (có xác nhận), description ADF đẹp, link `Relates` về ticket gốc**
+- [x] Notifier Zalo (`zapps.me`) push báo cáo + alert urgent; Telegram fallback
+- [x] `SEED_CHAT_IDS` env (mapping sống qua redeploy)
+- [x] Google OAuth login + chat history (Chainlit SQLite data layer)
+- [x] Welcome screen liệt kê đầy đủ command + Starters (thẻ bấm nhanh)
 
-### Nice-to-have (nếu còn thời gian)
+### Còn lại / lưu ý
 
-- [ ] Confluence MCP — suggest case tương tự
-- [ ] Alert ngay cho ticket urgent/critical
-
-### Future (sau hackathon)
-
-- [ ] Zalo group bot integration
-- [ ] Telegram BotFather integration
+- [ ] Onboard `chat_id` cho Quang + Tín (hiện mới có Long) → seed thêm vào `SEED_CHAT_IDS`
+- [ ] Test urgent alert end-to-end (cần 1 ticket priority cao)
+- ⚠️ SQLite ephemeral: chat history mất khi redeploy (chat_id thì đã seed qua env). Muốn bền → Postgres.
 
 ---
 
