@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Poseidon — Jira Triage Bot</title>
+<meta name="description" content="AI bot tự động scan, phân loại và tổng hợp Jira ticket cho team OP/FA — đọc runbook Confluence để gợi ý hướng xử lý. Chat qua web & Zalo. Deploy trên GreenNode AgentBase." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --navy:#0a1a2f; --navy-2:#0f2942; --ink:#13212f;
+    --teal:#1dc9a4; --cyan:#36b3f0; --gold:#f5c451;
+    --text:#e8eef5; --muted:#9fb3c8; --line:rgba(255,255,255,.10);
+    --card:#0e2238; --card-2:#102a44; --white:#ffffff;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--navy);color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  .accent{color:var(--teal)}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:12px;font-weight:600;font-size:15px;transition:.18s;border:1px solid transparent;cursor:pointer}
+  .btn-primary{background:linear-gradient(135deg,var(--teal),var(--cyan));color:#04202a}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(29,201,164,.35)}
+  .btn-ghost{border-color:var(--line);color:var(--text);background:rgba(255,255,255,.03)}
+  .btn-ghost:hover{border-color:var(--teal);color:var(--teal)}
+
+  /* NAV */
+  nav{position:sticky;top:0;z-index:50;background:rgba(10,26,47,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px;letter-spacing:.2px}
+  .logo .trident{width:34px;height:34px;display:grid;place-items:center;background:linear-gradient(135deg,var(--teal),var(--cyan));border-radius:10px;font-size:19px}
+  .nav-links{display:flex;gap:28px;font-size:14.5px;color:var(--muted);font-weight:500}
+  .nav-links a:hover{color:var(--text)}
+  .nav-cta{display:flex;gap:10px;align-items:center}
+  @media(max-width:860px){.nav-links{display:none}}
+
+  /* HERO */
+  header{position:relative;overflow:hidden;padding:96px 0 84px;background:radial-gradient(1100px 480px at 78% -8%,rgba(54,179,240,.16),transparent),radial-gradient(820px 420px at 8% 18%,rgba(29,201,164,.13),transparent)}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 15px;border:1px solid var(--line);border-radius:999px;font-size:13px;color:var(--muted);background:rgba(255,255,255,.03);margin-bottom:26px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 4px rgba(29,201,164,.18)}
+  h1{font-size:54px;line-height:1.08;font-weight:800;letter-spacing:-1px;max-width:880px}
+  .sub{font-size:19px;color:var(--muted);max-width:620px;margin:22px 0 34px}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap}
+  @media(max-width:680px){h1{font-size:38px}.sub{font-size:17px}header{padding:64px 0 56px}}
+
+  /* STATS */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:64px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+  .stat b{display:block;font-size:30px;font-weight:800;background:linear-gradient(135deg,var(--teal),var(--cyan));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .stat span{font-size:13.5px;color:var(--muted)}
+  @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+  /* SECTION */
+  section{padding:84px 0}
+  .eyebrow{color:var(--teal);font-weight:600;font-size:13.5px;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:14px}
+  h2{font-size:36px;font-weight:800;letter-spacing:-.6px;line-height:1.15;max-width:720px}
+  .lead{color:var(--muted);font-size:17px;max-width:680px;margin-top:16px}
+  @media(max-width:680px){h2{font-size:28px}section{padding:60px 0}}
+
+  /* PROBLEM/SOLUTION */
+  .ps{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:46px}
+  .ps-card{border:1px solid var(--line);border-radius:var(--radius);padding:30px;background:var(--card)}
+  .ps-card.sol{background:linear-gradient(160deg,var(--card-2),var(--card));border-color:rgba(29,201,164,.28)}
+  .ps-card h3{font-size:20px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+  .ps-card p,.ps-card li{color:var(--muted);font-size:15.5px}
+  .ps-card ul{list-style:none;margin-top:10px;display:flex;flex-direction:column;gap:9px}
+  .ps-card li{display:flex;gap:10px;align-items:flex-start}
+  .ps-card li::before{content:"▹";color:var(--teal);font-weight:700}
+  @media(max-width:760px){.ps{grid-template-columns:1fr}}
+
+  /* STEPS */
+  .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:46px;counter-reset:s}
+  .step{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px 18px}
+  .step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:rgba(29,201,164,.14);color:var(--teal);font-weight:800;margin-bottom:14px}
+  .step h4{font-size:15px;font-weight:600;margin-bottom:6px}
+  .step p{font-size:13px;color:var(--muted);line-height:1.5}
+  @media(max-width:920px){.steps{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:520px){.steps{grid-template-columns:1fr}}
+
+  /* FEATURES */
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;transition:.2s}
+  .fcard:hover{transform:translateY(-3px);border-color:rgba(29,201,164,.4)}
+  .ficon{width:46px;height:46px;border-radius:11px;display:grid;place-items:center;font-size:22px;background:rgba(54,179,240,.12);margin-bottom:16px}
+  .fcard h4{font-size:16.5px;font-weight:700;margin-bottom:8px}
+  .fcard p{font-size:14px;color:var(--muted);line-height:1.55}
+  @media(max-width:880px){.feat{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.feat{grid-template-columns:1fr}}
+
+  /* CHANNELS */
+  .chan{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+  .chan .fcard h4{font-size:18px}
+  .tag{display:inline-block;font-size:12px;color:var(--teal);background:rgba(29,201,164,.12);padding:4px 11px;border-radius:7px;margin-bottom:14px;font-weight:600}
+  @media(max-width:760px){.chan{grid-template-columns:1fr}}
+
+  /* STACK */
+  .stack{display:flex;flex-wrap:wrap;gap:11px;margin-top:36px}
+  .chip{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:11px 16px;font-size:14px;color:var(--text);display:flex;gap:9px;align-items:center}
+  .chip small{color:var(--muted);font-size:12.5px}
+
+  /* CTA BAND */
+  .band{margin:0 24px;border-radius:24px;background:linear-gradient(135deg,#0c3a4a,#0f2942);border:1px solid rgba(29,201,164,.3);text-align:center;padding:66px 24px;position:relative;overflow:hidden}
+  .band::after{content:"";position:absolute;inset:0;background:radial-gradient(600px 240px at 50% -20%,rgba(29,201,164,.22),transparent)}
+  .band-in{position:relative;z-index:1}
+  .band h2{margin:0 auto;font-size:34px}
+  .band p{color:var(--muted);margin:16px auto 30px;max-width:540px;font-size:17px}
+
+  /* FOOTER */
+  footer{border-top:1px solid var(--line);padding:46px 0 60px;margin-top:84px}
+  .foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+  .foot small{color:var(--muted);font-size:13.5px;display:block;line-height:1.8}
+  .foot .logo{font-size:17px}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a href="#" class="logo"><span class="trident">🔱</span> Poseidon</a>
+    <div class="nav-links">
+      <a href="#problem">Vấn đề</a>
+      <a href="#how">Cách hoạt động</a>
+      <a href="#features">Tính năng</a>
+      <a href="#channels">Kênh</a>
+      <a href="#stack">Công nghệ</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn btn-primary" href="https://endpoint-48095726-fd41-4c0a-b174-57656c1f8b2b.agentbase-runtime.aiplatform.vngcloud.vn">Mở ứng dụng →</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span> Đang chạy trên GreenNode AgentBase · Claw-a-thon 2026</span>
+    <h1>Triage Jira ticket cho team, <span class="accent">tự động bằng AI</span>.</h1>
+    <p class="sub">Poseidon tự scan, phân loại và tổng hợp ticket được giao cho team OP/FA — đọc runbook Confluence để gợi ý đúng cách xử lý, và tạo ticket CICD chỉ với một câu xác nhận.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://endpoint-48095726-fd41-4c0a-b174-57656c1f8b2b.agentbase-runtime.aiplatform.vngcloud.vn">Mở ứng dụng chat →</a>
+      <a class="btn btn-ghost" href="https://endpoint-48095726-fd41-4c0a-b174-57656c1f8b2b.agentbase-runtime.aiplatform.vngcloud.vn/dashboard">Xem dashboard FA/OP</a>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>2</b><span>project theo dõi (OS · ZPI)</span></div>
+      <div class="stat"><b>2×/ngày</b><span>báo cáo tự động 09:00 &amp; 17:30</span></div>
+      <div class="stat"><b>30 phút</b><span>chu kỳ sync + alert urgent</span></div>
+      <div class="stat"><b>MiniMax M2.5</b><span>agent có tool-calling</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="wrap">
+    <div class="eyebrow">Vấn đề &amp; giải pháp</div>
+    <h2>Phân phối và theo dõi ticket thủ công ngốn thời gian — và dễ bỏ sót.</h2>
+    <div class="ps">
+      <div class="ps-card">
+        <h3>😮‍💨 Hiện trạng</h3>
+        <p>OP và FA phải tự tay phân phối, theo dõi từng Jira ticket cho mỗi thành viên:</p>
+        <ul>
+          <li>Quy trình phân tán, tốn sức người</li>
+          <li>Dễ bỏ sót context của ticket</li>
+          <li>Không có gợi ý hướng xử lý dựa trên runbook/kinh nghiệm cũ</li>
+          <li>Ticket urgent giữa ngày dễ bị trôi</li>
+        </ul>
+      </div>
+      <div class="ps-card sol">
+        <h3><span class="accent">🔱</span> Với Poseidon</h3>
+        <p>Một AI bot làm phần việc lặp lại — <strong>không thay đổi quy trình assign hiện tại</strong>:</p>
+        <ul>
+          <li>Tự scan &amp; phân loại complexity / risk mỗi ticket</li>
+          <li>Đọc runbook Confluence → reason ra các bước xử lý cụ thể</li>
+          <li>Tổng hợp báo cáo team, push thẳng qua Zalo</li>
+          <li>Cảnh báo ngay ticket urgent tới đúng PIC</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background:var(--ink)">
+  <div class="wrap">
+    <div class="eyebrow">Cách hoạt động</div>
+    <h2>Từ ticket tới hướng xử lý — trong 5 bước.</h2>
+    <div class="steps">
+      <div class="step"><h4>Assign như cũ</h4><p>OP/FA giao ticket trên Jira, quy trình không đổi.</p></div>
+      <div class="step"><h4>Tự scan</h4><p>Bot poll project OS &amp; ZPI, lọc theo team mỗi 30 phút.</p></div>
+      <div class="step"><h4>Phân loại</h4><p>Chấm complexity &amp; risk, gom theo PIC, tổng hợp báo cáo.</p></div>
+      <div class="step"><h4>Gợi ý runbook</h4><p>Đọc ticket + runbook Confluence → tóm tắt các bước kèm link.</p></div>
+      <div class="step"><h4>Tạo CICD</h4><p>Bạn xác nhận → bot tạo ticket CICD &amp; link về ticket gốc.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">Tính năng</div>
+    <h2>Mọi thứ một team support cần — gói trong một con bot.</h2>
+    <div class="feat">
+      <div class="fcard"><div class="ficon">🔎</div><h4>Scan &amp; phân loại</h4><p>Tự sync ticket OS/ZPI vào store, chấm complexity/risk bằng Qwen 3.5 27B — nhanh ~1–3s/ticket.</p></div>
+      <div class="fcard"><div class="ficon">📚</div><h4>Reasoning theo runbook</h4><p>Xem toàn bộ runbook, map theo <em>Problem</em> + sample ticket (không đoán theo tiêu đề) → tóm tắt các bước.</p></div>
+      <div class="fcard"><div class="ficon">🎫</div><h4>Tạo ticket CICD</h4><p>Sau khi gợi ý, bot hỏi xác nhận rồi tạo ticket CICD (ADF đẹp), link <em>Relates</em> &amp; comment ngược ticket gốc.</p></div>
+      <div class="fcard"><div class="ficon">📊</div><h4>Báo cáo tự động</h4><p>Bảng tổng hợp 09:00 &amp; 17:30 — Key · Trạng thái · PIC · Phức tạp · Rủi ro. Xem lại tức thì với <code>/report</code>.</p></div>
+      <div class="fcard"><div class="ficon">⚠️</div><h4>Cảnh báo urgent</h4><p>Phát hiện ticket priority cao mới giữa ngày → push Zalo ngay tới đúng PIC, dedup không spam.</p></div>
+      <div class="fcard"><div class="ficon">🧠</div><h4>Bộ nhớ dài hạn</h4><p>Nhớ rule/quy ước của team xuyên phiên qua AgentBase Memory — recall theo ngữ cảnh khi cần.</p></div>
+      <div class="fcard"><div class="ficon">🗂️</div><h4>Dashboard FA/OP</h4><p>Trang web read-only theo dõi backlog &amp; ticket cần xử lý, query Jira live, có chat agent nhúng.</p></div>
+      <div class="fcard"><div class="ficon">🧾</div><h4>Audit &amp; truy vết</h4><p>Ghi nhật ký mọi hành động write, theo dõi vòng đời CICD đến khi Done rồi báo lại ticket gốc.</p></div>
+      <div class="fcard"><div class="ficon">🔐</div><h4>Đăng nhập linh hoạt</h4><p>Google OAuth có allowlist, kèm tài khoản user/password cho khách &amp; ban giám khảo demo.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="channels" style="background:var(--ink)">
+  <div class="wrap">
+    <div class="eyebrow">Kênh sử dụng</div>
+    <h2>Gặp team ở nơi họ đang làm việc.</h2>
+    <div class="chan">
+      <div class="fcard">
+        <span class="tag">Web</span>
+        <h4>Chainlit chat</h4>
+        <p>Giao diện chat chính, đăng nhập Google/mật khẩu, có lịch sử hội thoại. Hỏi tự nhiên bằng tiếng Việt, lệnh <code>/report</code>, <code>/audit</code> và thẻ gợi ý nhanh.</p>
+      </div>
+      <div class="fcard">
+        <span class="tag">Mobile</span>
+        <h4>Zalo 2 chiều</h4>
+        <p>Push báo cáo &amp; alert urgent, đồng thời chat read-only với agent ngay trong Zalo. Cấp quyền bằng mã đăng ký, chỉ trả lời chat đã duyệt.</p>
+      </div>
+      <div class="fcard">
+        <span class="tag">Dashboard</span>
+        <h4>Trang FA/OP</h4>
+        <p>Bảng theo dõi ticket OS/ZPI live, lọc theo trạng thái/project/PIC, deep-link mở trong Jira — kèm Copilot chat nhúng read-only.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="wrap">
+    <div class="eyebrow">Công nghệ</div>
+    <h2>Xây gọn, deploy thật, chạy always-on.</h2>
+    <p class="lead">Một Custom Agent container trên GreenNode AgentBase — orchestration LangChain, scheduler nội bộ, store SQLite, truy cập Jira/Confluence bằng REST.</p>
+    <div class="stack">
+      <div class="chip">🤖 MiniMax M2.5 <small>chat · tool-calling</small></div>
+      <div class="chip">⚡ Qwen 3.5 27B <small>classify · report</small></div>
+      <div class="chip">🔗 LangChain <small>agent + tools</small></div>
+      <div class="chip">💬 Chainlit <small>chat UI + OAuth</small></div>
+      <div class="chip">🗃️ SQLite <small>state &amp; history</small></div>
+      <div class="chip">🧩 Jira/Confluence REST <small>đọc + ghi (ADF)</small></div>
+      <div class="chip">⏱️ APScheduler <small>sync · report · track</small></div>
+      <div class="chip">🧠 AgentBase Memory <small>long-term facts</small></div>
+      <div class="chip">☁️ GreenNode AgentBase <small>runtime · PUBLIC · :8080</small></div>
+    </div>
+  </div>
+</section>
+
+<div class="band">
+  <div class="band-in wrap" style="padding-left:0;padding-right:0">
+    <h2>Sẵn sàng triage thông minh hơn?</h2>
+    <p>Mở Poseidon, hỏi thử “ticket ZPI-2 nên xử lý thế nào?” và xem bot đọc runbook trả lời.</p>
+    <div class="hero-cta" style="justify-content:center">
+      <a class="btn btn-primary" href="https://endpoint-48095726-fd41-4c0a-b174-57656c1f8b2b.agentbase-runtime.aiplatform.vngcloud.vn">Mở ứng dụng →</a>
+      <a class="btn btn-ghost" href="https://endpoint-48095726-fd41-4c0a-b174-57656c1f8b2b.agentbase-runtime.aiplatform.vngcloud.vn/dashboard">Xem dashboard</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <a href="#" class="logo"><span class="trident">🔱</span> Poseidon</a>
+      <small style="margin-top:12px">Jira Triage Bot · Claw-a-thon 2026<br/>GreenNode × VNG Group</small>
+    </div>
+    <div>
+      <small><strong style="color:var(--text)">Liên hệ</strong><br/>longnh17@vng.com.vn</small>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

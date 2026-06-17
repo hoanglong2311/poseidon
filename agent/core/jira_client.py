@@ -20,7 +20,7 @@ TEAM_IDS = [a.strip() for a in os.getenv("JIRA_TEAM_ACCOUNT_IDS", "").split(",")
 # not Support). Set e.g. "Support,Production Support" to restrict in production.
 ISSUE_TYPES = [t.strip() for t in os.getenv("JIRA_ISSUE_TYPES", "").split(",") if t.strip()]
 
-_FIELDS = "summary,status,assignee,priority,project,issuetype,updated"
+_FIELDS = "summary,status,assignee,priority,project,issuetype,updated,created"
 _URGENT = ("highest", "critical", "urgent", "blocker", "p1", "sev1", "sev-1")
 
 
@@ -59,10 +59,19 @@ def _simplify(issue: dict) -> dict:
         "project": (f.get("project") or {}).get("key"),
         "summary": f.get("summary"),
         "status": (f.get("status") or {}).get("name"),
+        "category": (((f.get("status") or {}).get("statusCategory")) or {}).get("key"),
         "assignee": assignee.get("displayName"),
         "assignee_id": assignee.get("accountId"),
         "priority": (f.get("priority") or {}).get("name"),
+        "created": f.get("created"),
+        "updated": f.get("updated"),
     }
+
+
+def dashboard_tickets(limit: int = 200) -> list[dict]:
+    """Toàn bộ ticket trong các project (OS+ZPI) cho dashboard FA/OP — không lọc assignee/type."""
+    proj = ", ".join(f'"{p}"' for p in PROJECTS)
+    return search_jira(f"project in ({proj}) ORDER BY created DESC", limit=limit)
 
 
 CICD_PROJECT = os.getenv("CICD_PROJECT", "CICD")
@@ -123,12 +132,29 @@ def _md_to_adf(text: str) -> dict:
     return {"type": "doc", "version": 1, "content": content}
 
 
+def get_status(issue_key: str) -> dict:
+    """Trả {name, category} của issue. category 'done' = đã hoàn tất (Done/Closed/Resolved)."""
+    issue = _jira().issue(issue_key, fields="status")
+    st = ((issue.get("fields") or {}).get("status")) or {}
+    return {"name": st.get("name"), "category": ((st.get("statusCategory") or {}).get("key"))}
+
+
+def add_comment(issue_key: str, text: str) -> bool:
+    """Add a comment (ADF) to a Jira issue. Best-effort."""
+    try:
+        _jira().post(f"rest/api/3/issue/{issue_key}/comment", json={"body": _md_to_adf(text)})
+        return True
+    except Exception:
+        return False
+
+
 def create_jira_ticket(summary: str, description: str, project: str | None = None,
                        issuetype: str = "Task", link_to: str | None = None,
-                       link_type: str = "Relates") -> dict:
+                       link_type: str = "Relates", back_comment: str | None = None) -> dict:
     """Create a Jira issue (default project CICD, type Task) with an ADF description.
-    If link_to is given (a source ticket key), link the new ticket to it. Returns
-    {key, url, linked_to}."""
+    If link_to is given (source ticket key): link the new ticket to it AND, if
+    back_comment is given, post that comment back on the source ticket (audit trail).
+    Returns {key, url, linked_to, commented}."""
     project = project or CICD_PROJECT
     j = _jira()
     payload = {
@@ -142,7 +168,7 @@ def create_jira_ticket(summary: str, description: str, project: str | None = Non
     res = j.post("rest/api/3/issue", json=payload)
     key = res.get("key") if isinstance(res, dict) else None
     site = JIRA_URL.rstrip("/")
-    out = {"key": key, "url": f"{site}/browse/{key}" if key else None, "linked_to": None}
+    out = {"key": key, "url": f"{site}/browse/{key}" if key else None, "linked_to": None, "commented": False}
 
     if key and link_to:
         try:
@@ -154,6 +180,8 @@ def create_jira_ticket(summary: str, description: str, project: str | None = Non
             out["linked_to"] = link_to
         except Exception as e:
             out["link_error"] = str(e)[:120]
+        if back_comment:
+            out["commented"] = add_comment(link_to, back_comment)
     return out
 
 
@@ -218,27 +246,56 @@ def _confluence():
 
 RUNBOOK_PAGE_ID = os.getenv("CONFLUENCE_RUNBOOK_PAGE_ID", "360449")  # [OPF-RC] Runbook index
 
+# Jira issue keys embedded in a runbook body as its "Sample ticket" (vd ZPI-2, CICD-3).
+_TICKET_KEY_RE = _re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d+\b")
+
+
+def _runbook_signal(body_html: str) -> tuple[str, list[str]]:
+    """Từ body HTML của 1 runbook → (summary, sample_tickets).
+
+    summary = phần Problem/Requirement đầu trang (để map theo NỘI DUNG, không theo tiêu đề).
+    sample_tickets = các issue key được đính kèm làm "Sample ticket" (vd ZPI-2 → CICD-3).
+    Đây là tín hiệu để chọn runbook đúng: tiêu đề runbook hay trùng từ khoá gây nhầm
+    (vd 'IBFT/VPB'), còn Problem + sample ticket phản ánh đúng loại việc.
+    """
+    from bs4 import BeautifulSoup
+
+    text = BeautifulSoup(body_html or "", "html.parser").get_text(" ", strip=True)
+    # Bỏ các key trùng nhưng giữ thứ tự xuất hiện (sample ticket nguồn thường đứng trước CICD).
+    keys, seen = [], set()
+    for m in _TICKET_KEY_RE.findall(text):
+        if m not in seen:
+            seen.add(m)
+            keys.append(m)
+    return text[:280].strip(), keys
+
 
 def list_runbooks() -> list[dict]:
-    """List the runbooks available under the Runbook index page (its child pages).
-    Lets the agent see the full catalog and reason which one fits, instead of guessing
-    via keyword search. The index page body itself is empty — content is in the children.
+    """List the runbooks under the Runbook index page (child pages) — enriched với
+    `summary` (Problem/Requirement) + `sample_tickets` (issue key đính kèm) để agent
+    MAP theo nội dung/sample ticket, không chỉ theo tiêu đề. Một call (expand body.storage).
+    The index page body itself is empty — content is in the children.
     """
     if not (CONFLUENCE_URL and CONFLUENCE_API_TOKEN and RUNBOOK_PAGE_ID):
         return []
     conf = _confluence()
     site = CONFLUENCE_URL.rstrip("/").removesuffix("/wiki")
     try:
-        kids = list(conf.get_page_child_by_type(RUNBOOK_PAGE_ID, type="page", start=0, limit=100))
+        kids = list(conf.get_page_child_by_type(
+            RUNBOOK_PAGE_ID, type="page", start=0, limit=100, expand="body.storage"))
     except Exception:
         return []
     out = []
     for k in kids:
         webui = ((k.get("_links") or {}).get("webui")) or ""
+        body = (((k.get("body") or {}).get("storage") or {}).get("value")) or ""
+        summary, samples = _runbook_signal(body)
         out.append({
             "id": k.get("id"),
             "title": k.get("title"),
             "url": f"{site}/wiki{webui}" if webui.startswith("/") else f"{site}/wiki/pages/viewpage.action?pageId={k.get('id')}",
+            "summary": summary,
+            "sample_tickets": samples,
         })
     return out
 

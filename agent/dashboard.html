@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Poseidon — Bảng theo dõi ticket</title>
+<style>
+  :root{
+    --bg:#f5f4ee; --paper:#fffdf9; --ink:#2b2a27; --muted:#73706a;
+    --line:#e7e4db; --accent:#d97757; --green:#3f9b6d; --amber:#d9a441;
+    --blue:#5b7fb9; --red:#cc5b52; --slate:#8a8780;
+    --radius:16px; --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1120px;margin:0 auto;padding:28px 20px 60px}
+  header.top{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  h1{font-size:22px;margin:0;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);
+    padding:8px 14px;border-radius:999px;font-size:13px;cursor:pointer;transition:.15s;text-decoration:none;display:inline-block}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  /* tabs */
+  .tabs{display:flex;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+  .tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;
+    border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab .hint{font-weight:400;font-size:11.5px;color:var(--slate);display:block;margin-top:1px}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;box-shadow:var(--shadow)}
+  .card .label{color:var(--muted);font-size:12.5px;font-weight:500}
+  .card .num{font-size:30px;font-weight:680;margin-top:6px;letter-spacing:-.02em}
+  .card .num.accent{color:var(--accent)} .card .num.red{color:var(--red)} .card .num.green{color:var(--green)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px 20px;box-shadow:var(--shadow);margin-bottom:18px}
+  .panel h2{font-size:14px;margin:0 0 14px;font-weight:600;color:var(--ink)}
+  .legend{display:flex;flex-direction:column;gap:8px;font-size:13px}
+  .legend .it{display:flex;align-items:center;gap:8px}
+  .dot{width:10px;height:10px;border-radius:3px;flex:none}
+  .donutwrap{display:flex;align-items:center;gap:20px}
+  .bar{display:flex;align-items:center;gap:10px;font-size:13px;margin:7px 0}
+  .bar .name{width:140px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar .track{flex:1;background:#efece4;border-radius:999px;height:14px;overflow:hidden}
+  .bar .fill{height:100%;border-radius:999px}
+  .bar .v{width:30px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  /* filters */
+  .filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:14px}
+  .chip{border:1px solid var(--line);background:var(--paper);color:var(--muted);
+    padding:5px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;transition:.12s}
+  .chip:hover{border-color:var(--accent)}
+  .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .filters .sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+  .filters select{border:1px solid var(--line);background:var(--paper);color:var(--ink);
+    padding:5px 10px;border-radius:999px;font-size:12.5px;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:10px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;cursor:pointer;white-space:nowrap}
+  td a.key{color:var(--accent);text-decoration:none;font-weight:600}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+  .st-new{background:#eef2f8;color:#41618f} .st-indeterminate{background:#fbf1dd;color:#9a7415}
+  .st-done{background:#e6f3ec;color:#2f7a54}
+  .age-old{color:var(--red);font-weight:600}
+  .urg{color:var(--red)}
+  .noassign{color:var(--red);font-weight:600;font-size:12.5px}
+  .act{color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px;white-space:nowrap}
+  .act:hover{text-decoration:underline}
+  .grouphd{font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.04em;padding:14px 2px 6px;display:flex;align-items:center;gap:8px}
+  .grouphd .cnt{font-weight:600;color:var(--slate)}
+  tr.done-row td{opacity:.62}
+  .gate{max-width:380px;margin:90px auto;text-align:center}
+  .gate input{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:12px;font-size:15px;margin:14px 0}
+  .gate .btn{width:100%;background:var(--accent);color:#fff;border-color:var(--accent);padding:11px}
+  .err{color:var(--red);font-size:13px;min-height:18px}
+  .muted{color:var(--muted)} .right{text-align:right} .empty{color:var(--muted);padding:18px 2px}
+  @media(max-width:760px){.cards{grid-template-columns:repeat(2,1fr)}.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate" class="gate" style="display:none">
+    <h1>🔱 Poseidon Dashboard</h1>
+    <p class="muted">Nhập mã truy cập để xem bảng theo dõi ticket.</p>
+    <input id="tok" type="password" placeholder="Mã truy cập" />
+    <div class="err" id="gerr"></div>
+    <button class="btn" onclick="saveTok()">Vào dashboard</button>
+  </div>
+
+  <div id="app" style="display:none">
+    <header class="top">
+      <div>
+        <h1>🔱 Poseidon — Theo dõi ticket OS / ZPI</h1>
+        <div class="sub" id="meta">Đang tải…</div>
+      </div>
+      <button class="btn" onclick="load()">↻ Làm mới</button>
+    </header>
+
+    <div class="tabs">
+      <div class="tab active" id="tab-backlog" onclick="setTab('backlog')">
+        📊 Backlog phòng ban<span class="hint">cho OP / FA — yêu cầu đang dồn ở đâu</span>
+      </div>
+      <div class="tab" id="tab-todo" onclick="setTab('todo')">
+        🛠️ Cần xử lý<span class="hint">cho PIC — việc phải làm, theo trạng thái</span>
+      </div>
+    </div>
+
+    <!-- ============ TAB: BACKLOG (OP/FA) ============ -->
+    <div id="view-backlog">
+      <div class="cards">
+        <div class="card"><div class="label">Tổng ticket</div><div class="num" id="c-total">–</div></div>
+        <div class="card"><div class="label">Đang tồn đọng</div><div class="num accent" id="c-open">–</div></div>
+        <div class="card"><div class="label">🔴 Urgent đang mở</div><div class="num red" id="c-urgent">–</div></div>
+        <div class="card"><div class="label">Đã xong</div><div class="num green" id="c-done">–</div></div>
+      </div>
+
+      <div class="row2">
+        <div class="panel"><h2>Theo trạng thái</h2>
+          <div class="donutwrap"><div id="donut"></div><div class="legend" id="legend"></div></div>
+        </div>
+        <div class="panel"><h2>Tồn đọng theo phòng ban (project)</h2><div id="bars-proj"></div></div>
+      </div>
+
+      <div class="panel"><h2>Tồn đọng theo người xử lý (PIC)</h2><div id="bars-pic"></div></div>
+
+      <div class="panel">
+        <h2>Danh sách ticket <span class="muted" id="t-count"></span></h2>
+        <div class="filters" id="filters-backlog"></div>
+        <table>
+          <thead><tr>
+            <th onclick="sortBy('key')">Key</th><th onclick="sortBy('summary')">Tiêu đề</th>
+            <th onclick="sortBy('status')">Trạng thái</th><th onclick="sortBy('assignee')">PIC</th>
+            <th onclick="sortBy('priority')">Priority</th>
+            <th class="right" onclick="sortBy('age')" title="Số ngày kể từ lúc ticket được tạo">Tuổi (ngày từ lúc tạo)</th>
+          </tr></thead>
+          <tbody id="tbody-backlog"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ TAB: CẦN XỬ LÝ (PIC) ============ -->
+    <div id="view-todo" style="display:none">
+      <div class="panel">
+        <h2>Việc cần xử lý <span class="muted" id="t-count2"></span></h2>
+        <p class="sub" style="margin:-6px 0 12px">Chỉ ticket đang mở (To Do + In Progress), gom theo trạng thái, urgent lên đầu. Bấm <b>Mở/Giao trong Jira</b> để xử lý.</p>
+        <div class="filters" id="filters-todo"></div>
+        <div id="todo-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY="poseidon_dash_token";
+let DATA=[], BASE="", TAB="backlog", sortKey="status", sortDir=1, COPILOT_MOUNTED=false;
+let fB={status:"open",project:"all",pic:"all"};   // backlog filters
+let fT={project:"all",pic:"all",unassigned:false}; // todo filters
+const STCOLOR={new:"#5b7fb9",indeterminate:"#d9a441",done:"#3f9b6d"};
+const STLABEL={new:"To Do",indeterminate:"In Progress",done:"Done"};
+const STORDER={new:0,indeterminate:1,done:2};
+
+function tok(){return localStorage.getItem(KEY)||""}
+function saveTok(){const v=document.getElementById("tok").value.trim();if(v){localStorage.setItem(KEY,v);load();}}
+function showGate(msg){document.getElementById("gate").style.display="block";document.getElementById("app").style.display="none";document.getElementById("gerr").textContent=msg||"";}
+function fmtAge(created){if(!created)return null;return Math.floor((Date.now()-new Date(created).getTime())/86400000);}
+function proj(t){return t.project||(t.key||"").split("-")[0]||"?";}
+function esc(s){return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function issueUrl(k){return BASE+"/browse/"+k;}
+
+async function load(){
+  const t=tok(); if(!t){showGate();return;}
+  try{
+    const r=await fetch("/api/dashboard",{headers:{"X-Dashboard-Token":t}});
+    if(r.status===401){showGate("Mã không đúng.");return;}
+    const j=await r.json();
+    DATA=j.tickets||[]; BASE=(j.jira_base||"").replace(/\/$/,"");
+    document.getElementById("gate").style.display="none";
+    document.getElementById("app").style.display="block";
+    document.getElementById("meta").textContent="Cập nhật: "+new Date(j.generatedAt).toLocaleString("vi-VN")+" · live từ Jira";
+    render();
+    mountCopilot(t);
+  }catch(e){showGate("Lỗi tải dữ liệu.");}
+}
+
+// Nhúng chat Poseidon (Chainlit Copilot). App bật OAuth → Copilot cần accessToken:
+// đổi DASHBOARD_TOKEN lấy 1 JWT ngắn hạn ở /api/copilot-token. Cùng origin nên không vướng CORS.
+async function mountCopilot(t){
+  if(COPILOT_MOUNTED || !window) return;
+  try{
+    const r=await fetch("/api/copilot-token",{headers:{"X-Dashboard-Token":t}});
+    if(!r.ok) return;
+    const j=await r.json(); if(!j.token) return;
+    COPILOT_MOUNTED=true;
+    const s=document.createElement("script");
+    s.src="/copilot/index.js";
+    s.onload=()=>window.mountChainlitWidget({
+      chainlitServer: window.location.origin,
+      accessToken: j.token,
+      theme: "light",
+    });
+    document.body.appendChild(s);
+  }catch(e){ /* chat lỗi không chặn dashboard */ }
+}
+
+function setTab(t){
+  TAB=t;
+  document.getElementById("tab-backlog").classList.toggle("active",t==="backlog");
+  document.getElementById("tab-todo").classList.toggle("active",t==="todo");
+  document.getElementById("view-backlog").style.display=t==="backlog"?"block":"none";
+  document.getElementById("view-todo").style.display=t==="todo"?"block":"none";
+  render();
+}
+
+function render(){ if(TAB==="backlog"){renderBacklog();} else {renderTodo();} }
+
+/* ---------- shared chart helpers ---------- */
+function drawDonut(byCat){
+  const total=Object.values(byCat).reduce((a,b)=>a+b,0)||1;
+  let off=0,segs="";const R=52,C=2*Math.PI*R;
+  for(const k of ["new","indeterminate","done"]){
+    const v=byCat[k]||0; if(!v)continue;
+    const len=C*v/total;
+    segs+=`<circle r="${R}" cx="70" cy="70" fill="none" stroke="${STCOLOR[k]}" stroke-width="20" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 70 70)"/>`;
+    off+=len;
+  }
+  document.getElementById("donut").innerHTML=`<svg width="140" height="140" viewBox="0 0 140 140">${segs}<text x="70" y="66" text-anchor="middle" font-size="26" font-weight="700" fill="#2b2a27">${total}</text><text x="70" y="86" text-anchor="middle" font-size="11" fill="#73706a">ticket</text></svg>`;
+  document.getElementById("legend").innerHTML=["new","indeterminate","done"].map(k=>byCat[k]?`<div class="it"><span class="dot" style="background:${STCOLOR[k]}"></span>${STLABEL[k]} · <b>${byCat[k]}</b></div>`:"").join("");
+}
+function drawBars(elId,counts,color){
+  const items=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const max=Math.max(1,...items.map(i=>i[1]));
+  document.getElementById(elId).innerHTML=items.length?items.map(([n,v])=>
+    `<div class="bar"><span class="name" title="${esc(n)}">${esc(n)}</span><span class="track"><span class="fill" style="width:${v/max*100}%;background:${color}"></span></span><span class="v">${v}</span></div>`).join(""):'<div class="empty">Không có ticket tồn đọng 🎉</div>';
+}
+
+/* ---------- TAB 1: backlog ---------- */
+function renderBacklog(){
+  const open=DATA.filter(t=>t.open), done=DATA.filter(t=>!t.open);
+  document.getElementById("c-total").textContent=DATA.length;
+  document.getElementById("c-open").textContent=open.length;
+  document.getElementById("c-urgent").textContent=open.filter(t=>t.urgent).length;
+  document.getElementById("c-done").textContent=done.length;
+
+  const byCat={}; DATA.forEach(t=>{const c=t.category||"new";byCat[c]=(byCat[c]||0)+1;});
+  drawDonut(byCat);
+  const byProj={}; open.forEach(t=>{const p=proj(t);byProj[p]=(byProj[p]||0)+1;});
+  drawBars("bars-proj",byProj,"var(--blue)");
+  const byPic={}; open.forEach(t=>{const a=t.assignee||"(chưa giao)";byPic[a]=(byPic[a]||0)+1;});
+  drawBars("bars-pic",byPic,"var(--accent)");
+
+  renderFiltersBacklog();
+  renderBacklogTable();
+}
+function renderFiltersBacklog(){
+  const projs=[...new Set(DATA.map(proj))].sort();
+  const pics=[...new Set(DATA.map(t=>t.assignee).filter(Boolean))].sort();
+  const stChip=(v,l)=>`<span class="chip ${fB.status===v?'on':''}" onclick="setF('B','status','${v}')">${l}</span>`;
+  const prChip=(v,l)=>`<span class="chip ${fB.project===v?'on':''}" onclick="setF('B','project','${v}')">${l}</span>`;
+  document.getElementById("filters-backlog").innerHTML=
+    stChip("all","Tất cả")+stChip("open","Tồn đọng")+stChip("new","To Do")+stChip("indeterminate","In Progress")+stChip("done","Done")
+    +'<span class="sep"></span>'+prChip("all","Mọi project")+projs.map(p=>prChip(p,p)).join("")
+    +'<span class="sep"></span><select onchange="setF(\'B\',\'pic\',this.value)">'
+    +`<option value="all">Mọi PIC</option>`
+    +pics.map(p=>`<option value="${esc(p)}" ${fB.pic===p?'selected':''}>${esc(p)}</option>`).join("")
+    +`<option value="__none__" ${fB.pic==='__none__'?'selected':''}>(chưa giao)</option></select>`;
+}
+function passB(t){
+  if(fB.status==="open"&&!t.open)return false;
+  if(["new","indeterminate","done"].includes(fB.status)&&(t.category||"new")!==fB.status)return false;
+  if(fB.project!=="all"&&proj(t)!==fB.project)return false;
+  if(fB.pic==="__none__"&&t.assignee)return false;
+  if(fB.pic!=="all"&&fB.pic!=="__none__"&&t.assignee!==fB.pic)return false;
+  return true;
+}
+function renderBacklogTable(){
+  let rows=DATA.filter(passB);
+  rows.sort((a,b)=>{
+    let x,y;
+    if(sortKey==="age"){x=fmtAge(a.created)||0;y=fmtAge(b.created)||0;}
+    else if(sortKey==="status"){x=STORDER[a.category||"new"];y=STORDER[b.category||"new"];}
+    else {x=(a[sortKey]||"").toString().toLowerCase();y=(b[sortKey]||"").toString().toLowerCase();}
+    return (x>y?1:x<y?-1:0)*sortDir;
+  });
+  document.getElementById("t-count").textContent="("+rows.length+")";
+  document.getElementById("tbody-backlog").innerHTML=rows.length?rows.map(t=>{
+    const age=fmtAge(t.created),cat=t.category||"new";
+    const agec=(t.open&&age!=null&&age>=7)?"age-old":"";
+    return `<tr class="${t.open?'':'done-row'}">
+      <td><a class="key" href="${issueUrl(t.key)}" target="_blank">${t.key}</a></td>
+      <td>${t.urgent?'<span class="urg">🔴 </span>':''}${esc(t.summary)}</td>
+      <td><span class="pill st-${cat}">${esc(t.status)}</span></td>
+      <td>${t.assignee?esc(t.assignee):'<span class="noassign">chưa giao</span>'}</td>
+      <td>${esc(t.priority)}</td>
+      <td class="right ${agec}">${age==null?"–":age}</td></tr>`;
+  }).join(""):'<tr><td colspan="6" class="empty">Không có ticket khớp bộ lọc.</td></tr>';
+}
+
+/* ---------- TAB 2: cần xử lý (PIC) ---------- */
+function renderTodo(){
+  renderFiltersTodo();
+  const open=DATA.filter(t=>t.open).filter(passT);
+  document.getElementById("t-count2").textContent="("+open.length+" đang mở)";
+  const groups=[["new","🟦 To Do"],["indeterminate","🟨 In Progress"]];
+  const sortByPrio=(a,b)=>{
+    if(a.urgent!==b.urgent)return a.urgent?-1:1;
+    return (fmtAge(b.created)||0)-(fmtAge(a.created)||0);
+  };
+  let html="";
+  for(const [cat,label] of groups){
+    const rows=open.filter(t=>(t.category||"new")===cat).sort(sortByPrio);
+    if(!rows.length)continue;
+    html+=`<div class="grouphd">${label} <span class="cnt">· ${rows.length}</span></div>`;
+    html+=`<table><tbody>`+rows.map(t=>{
+      const age=fmtAge(t.created),agec=(age!=null&&age>=7)?"age-old":"";
+      return `<tr>
+        <td style="width:80px"><a class="key" href="${issueUrl(t.key)}" target="_blank">${t.key}</a></td>
+        <td>${t.urgent?'<span class="urg">🔴 </span>':''}${esc(t.summary)}</td>
+        <td style="width:150px">${t.assignee?esc(t.assignee):'<span class="noassign">⚠ chưa giao</span>'}</td>
+        <td style="width:90px">${esc(t.priority)}</td>
+        <td class="right ${agec}" style="width:70px" title="ngày từ lúc tạo">${age==null?"–":age+"d"}</td>
+        <td class="right" style="width:140px"><a class="act" href="${issueUrl(t.key)}" target="_blank">${t.assignee?'Mở trong Jira →':'Giao trong Jira →'}</a></td>
+      </tr>`;
+    }).join("")+`</tbody></table>`;
+  }
+  document.getElementById("todo-list").innerHTML=html||'<div class="empty">Không còn việc cần xử lý 🎉</div>';
+}
+function renderFiltersTodo(){
+  const projs=[...new Set(DATA.map(proj))].sort();
+  const pics=[...new Set(DATA.filter(t=>t.open).map(t=>t.assignee).filter(Boolean))].sort();
+  const prChip=(v,l)=>`<span class="chip ${fT.project===v?'on':''}" onclick="setF('T','project','${v}')">${l}</span>`;
+  document.getElementById("filters-todo").innerHTML=
+    prChip("all","Mọi project")+projs.map(p=>prChip(p,p)).join("")
+    +'<span class="sep"></span>'
+    +`<span class="chip ${fT.unassigned?'on':''}" onclick="toggleUnassigned()">⚠ Chỉ chưa giao</span>`
+    +'<span class="sep"></span><select onchange="setF(\'T\',\'pic\',this.value)">'
+    +`<option value="all">Mọi PIC</option>`
+    +pics.map(p=>`<option value="${esc(p)}" ${fT.pic===p?'selected':''}>${esc(p)}</option>`).join("")+`</select>`;
+}
+function passT(t){
+  if(fT.project!=="all"&&proj(t)!==fT.project)return false;
+  if(fT.unassigned&&t.assignee)return false;
+  if(fT.pic!=="all"&&t.assignee!==fT.pic)return false;
+  return true;
+}
+function toggleUnassigned(){fT.unassigned=!fT.unassigned;renderTodo();}
+
+/* ---------- interactions ---------- */
+function setF(which,k,v){const f=which==="B"?fB:fT;f[k]=v;render();}
+function sortBy(k){if(k===sortKey){sortDir=-sortDir;}else{sortKey=k;sortDir=1;}renderBacklogTable();}
+
+load();
+</script>
+</body>
+</html>

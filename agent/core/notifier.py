@@ -27,16 +27,42 @@ def _endpoint(method: str) -> tuple[str, str]:
     return f"{ZALO_BASE}/bot{ZALO_TOKEN}/{method}", ZALO_TOKEN
 
 
-def send(chat_id: str, text: str) -> bool:
-    """Push a PRIVATE message. Returns True on success. Same signature both backends."""
+_MAX = 1900  # Zalo sendMessage giới hạn ~2000 ký tự/tin
+
+
+def _chunks(text: str):
+    """Chia text dài thành các đoạn <= _MAX, ưu tiên cắt ở ranh giới dòng."""
+    text = text or " "
+    while len(text) > _MAX:
+        cut = text.rfind("\n", 0, _MAX)
+        if cut < _MAX // 2:
+            cut = _MAX
+        yield text[:cut]
+        text = text[cut:].lstrip("\n")
+    if text:
+        yield text
+
+
+def _post_one(chat_id: str, text: str, parse_mode: str | None) -> bool:
     url, token = _endpoint("sendMessage")
     if not token or not chat_id:
         return False
+    payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     try:
-        r = httpx.post(url, json={"chat_id": chat_id, "text": text[:2000]}, timeout=15)
+        r = httpx.post(url, json=payload, timeout=15)
         return r.status_code == 200 and bool(r.json().get("ok", True))
     except Exception:
         return False
+
+
+def send(chat_id: str, text: str, parse_mode: str | None = None) -> bool:
+    """Push a message; tự chia nhỏ nếu > giới hạn. Returns True nếu mọi đoạn gửi OK."""
+    ok = True
+    for part in _chunks(text):
+        ok = _post_one(chat_id, part, parse_mode) and ok
+    return ok
 
 
 def get_updates() -> list[dict]:

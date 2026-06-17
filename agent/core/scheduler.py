@@ -8,7 +8,7 @@ from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from . import store, notifier
+from . import store, notifier, jira_client
 from .jira_client import team_jql, search_jira, is_urgent
 from .classifier import classify_ticket
 from .report import build_report, build_report_plain
@@ -72,20 +72,53 @@ def run_report(kind: str = "daily") -> dict:
     plain = build_report_plain(kind)
 
     pushed = 0
-    seen = set()
-    for row in store.all_chat_ids():
-        cid = row["chat_id"]
-        if cid in seen:
-            continue
-        seen.add(cid)
+    for cid in store.authorized_chat_ids():  # chỉ gửi cho chat_id đã được cấp quyền
         if notifier.send(cid, plain):
             pushed += 1
     log.info("report(%s): classified=%d pushed=%d", kind, classified, pushed)
     return {"classified": classified, "pushed": pushed}
 
 
+def run_cicd_tracking() -> dict:
+    """Poll status các CICD ticket đang theo dõi; khi Done → comment ticket gốc +
+    push PIC + đánh dấu (đóng vòng đời CICD)."""
+    open_rows = store.cicd_open()
+    done = 0
+    for row in open_rows:
+        key, src = row["cicd_key"], row.get("source_key")
+        try:
+            st = jira_client.get_status(key)
+        except Exception as e:
+            log.warning("cicd track: get_status %s failed: %s", key, e)
+            continue
+        name = st.get("name") or row.get("status") or ""
+        if (st.get("category") or "").lower() == "done":
+            if src:
+                jira_client.add_comment(
+                    src, f"✅ **Poseidon**: ticket xử lý **{key}** đã hoàn tất (trạng thái: {name}).")
+                # báo PIC của ticket gốc (nếu có chat_id)
+                try:
+                    tk = jira_client.get_ticket(src)
+                    cid = store.get_chat_id(tk.get("assignee_id") or "")
+                    if cid:
+                        notifier.send(cid, f"✅ {key} (xử lý cho {src}) đã hoàn tất — bạn có thể kiểm tra lại.")
+                except Exception:
+                    pass
+            store.update_cicd(key, name, 1)
+            store.audit_add("cicd_done", "system", f"{key} ({src}) -> {name}")
+            done += 1
+        else:
+            store.update_cicd(key, name, 0)
+    log.info("cicd track: open=%d done_notified=%d", len(open_rows), done)
+    return {"open": len(open_rows), "done": done}
+
+
 def _sync_job():
     run_sync()
+
+
+def _cicd_track_job():
+    run_cicd_tracking()
 
 
 def _report_job(kind: str):
@@ -100,6 +133,8 @@ def start_scheduler() -> BackgroundScheduler:
     # Run an initial sync right away so the bot has data immediately on boot,
     # then every 30 minutes.
     sched.add_job(_sync_job, "interval", minutes=30, id="sync", next_run_time=datetime.now())
+    # Track vòng đời CICD ticket mỗi 15' (+ ngay khi boot).
+    sched.add_job(_cicd_track_job, "interval", minutes=15, id="cicd_track", next_run_time=datetime.now())
     sched.add_job(_report_job, "cron", hour=9, minute=0, args=["morning"], id="report_am")
     sched.add_job(_report_job, "cron", hour=17, minute=30, args=["evening"], id="report_pm")
     sched.start()
